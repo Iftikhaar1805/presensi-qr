@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+/*
+  RENCANA DESAIN: "papan absen kelas"
+  Warna  : biru tinta pekat (sampul buku / sidebar), kertas putih kehijauan, kuning stabilo
+           (satu-satunya aksen khas), merah stempel untuk alpa. Status memakai warna tinta asli.
+  Huruf  : Bricolage Grotesque versi sempit untuk angka & judul besar, Atkinson Hyperlegible untuk bacaan.
+  Bentuk : sudut hampir siku, garis tipis, tanpa bayangan. Satu momen berani: papan kehadiran (satu kotak
+           per siswa) dan hasil scan sebagai stempel.
+  Stabilo dipakai hemat: angka utama, menu aktif, sudut bidik kamera.
+*/
+@theme {
+  --font-sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
+
+  /* Netral condong ke hijau-kertas, bukan abu-abu dingin bawaan */
+  --color-slate-50: #f4f5f1;
+  --color-slate-100: #eaece6;
+  --color-slate-200: #d8dbd2;
+  --color-slate-300: #bcc0b5;
+  --color-slate-400: #8a8f82;
+  --color-slate-500: #62675b;
+  --color-slate-600: #474c41;
+  --color-slate-700: #31352c;
+  --color-slate-800: #1e211a;
+  --color-slate-900: #0f120c;
+
+  /* Biru tinta pekat */
+  --color-brand-50: #eceefb;
+  --color-brand-100: #d9ddf5;
+  --color-brand-200: #b3baea;
+  --color-brand-500: #3347b8;
+  --color-brand-600: #1c2b86;
+  --color-brand-700: #121e66;
+  --color-brand-900: #0c1744;
+
+  --color-stabilo: #ffe14a;
+  --color-ink-red: #b9232b;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+}
+
+html, body, #root { height: 100%; }
+html { font-size: 16.5px; }
+body { @apply bg-slate-50 text-slate-800 antialiased; }
+
+/* Angka dan judul besar: huruf sempit yang tegas */
+.display {
+  font-family: var(--font-display);
+  font-stretch: 78%;
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+  font-weight: 800;
+}
+
+/* Tanda stabilo di bawah teks, tetap rapi walau teks patah baris */
+.stabilo {
+  background: linear-gradient(to top, transparent 6%, var(--color-stabilo) 6%, var(--color-stabilo) 62%, transparent 62%);
+  padding-inline: 0.12em;
+  margin-inline: -0.12em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  color: var(--color-brand-900);
+}
+
+/* Stempel karet: bingkai ganda, miring, tinta sedikit tembus */
+.stamp {
+  display: inline-block;
+  border: 0.28rem solid currentColor;
+  outline: 0.12rem solid currentColor;
+  outline-offset: 0.22rem;
+  border-radius: 0.6rem;
+  padding: 0.35rem 1rem 0.2rem;
+  transform: rotate(-5deg);
+  opacity: 0.92;
+  font-family: var(--font-display);
+  font-stretch: 80%;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+}
+
+/* Kertas buku tulis: garis biru + garis margin merah */
+.kertas {
+  background-color: #fbfcfa;
+  background-image:
+    linear-gradient(90deg, transparent 3.4rem, rgb(185 35 43 / 0.38) 3.4rem, rgb(185 35 43 / 0.38) calc(3.4rem + 2px), transparent calc(3.4rem + 2px)),
+    repeating-linear-gradient(to bottom, transparent 0 calc(2rem - 1px), rgb(51 71 184 / 0.15) calc(2rem - 1px) 2rem);
+  background-position: 0 0.9rem;
+}
+
+#qr-reader video { object-fit: cover; }
+#qr-reader { border: none !important; }
+
+.print-only { display: none; }
+
+@media print {
+  @page { size: A4; margin: 10mm; }
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-only { display: block; }
+  .print-area { border: none !important; padding: 0 !important; }
+  .print-break { break-after: page; }
+  .avoid-break { break-inside: avoid; }
+  table { font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
