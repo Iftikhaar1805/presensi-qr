@@ -7,6 +7,7 @@ import { Link } from '../lib/nav'
 import { Button, Mark } from '../components/ui'
 import { useSchool } from '../context/SchoolContext'
 import * as api from '../lib/api'
+import { cameraErrorText, startCamera } from '../lib/camera'
 import type { CekKartuResult, Status } from '../lib/types'
 import { STATUS_META, cn, formatDateShort } from '../lib/utils'
 
@@ -64,16 +65,10 @@ export default function CekKartuPage() {
     setCam('starting')
     try {
       scannerRef.current ??= new Html5Qrcode('cek-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
-      await scannerRef.current.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: (w, h) => ({ width: Math.floor(Math.min(w, h) * 0.7), height: Math.floor(Math.min(w, h) * 0.7) }) },
-        (text) => void lookup(text),
-        () => {},
-      )
+      await startCamera(scannerRef.current, (text) => void lookup(text))
       setCam('running')
     } catch (e) {
-      const name = e instanceof Error ? e.name : ''
-      setCamError(name === 'NotAllowedError' ? 'Kamera belum diizinkan. Ketuk ikon gembok di samping alamat, izinkan Kamera, lalu coba lagi.' : 'Kamera tidak bisa dibuka. Pakai tombol "Pilih foto kartu" di bawah.')
+      setCamError(cameraErrorText(e))
       setCam('error')
     }
   }

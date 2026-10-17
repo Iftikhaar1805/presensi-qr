@@ -12,6 +12,8 @@ export interface Settings {
   checkInTime: string
   lateTolerance: number
   cutoffTime: string
+  /** Latihan: presensi boleh dibuka hari ini walau Minggu atau hari libur */
+  practiceMode: boolean
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -22,12 +24,14 @@ export async function getSettings(): Promise<Settings> {
     checkInTime: kv.checkInTime ?? '07:00',
     lateTolerance: Number(kv.lateTolerance ?? 15),
     cutoffTime: kv.cutoffTime ?? '09:00',
+    practiceMode: kv.practiceMode === '1',
   }
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
   for (const [key, value] of Object.entries(s)) {
-    await db.insert(schema.settings).values({ key, value: String(value) }).onConflictDoUpdate({ target: schema.settings.key, set: { value: String(value) } }).run()
+    const v = typeof value === 'boolean' ? (value ? '1' : '0') : String(value)
+    await db.insert(schema.settings).values({ key, value: v }).onConflictDoUpdate({ target: schema.settings.key, set: { value: v } }).run()
   }
 }
 
@@ -36,6 +40,8 @@ export function emptyCounts(): Record<Status, number> {
 }
 
 export async function schoolDay(date: string): Promise<{ open: boolean; reason?: string }> {
+  // Mode latihan: hari ini selalu dianggap hari sekolah, supaya aplikasi bisa dicoba kapan saja (juga Minggu dan hari libur)
+  if (date === wib().date && (await getSettings()).practiceMode) return { open: true }
   if (isSunday(date)) return { open: false, reason: 'Hari Minggu' }
   const h = await db.select().from(schema.holidays).where(eq(schema.holidays.date, date)).get()
   if (h) return { open: false, reason: h.description }

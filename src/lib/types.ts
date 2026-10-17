@@ -77,6 +77,7 @@ export interface Settings {
   checkInTime: string // HH:mm
   lateTolerance: number // menit
   cutoffTime: string // HH:mm — setelah ini yang belum scan = alpa
+  practiceMode: boolean // latihan: presensi boleh dibuka hari ini walau Minggu atau libur
 }
 
 export interface Holiday {

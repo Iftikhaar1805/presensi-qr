@@ -41,6 +41,8 @@ let guru = ''
 
 before(async () => {
   admin = (await login('admin', 'admin123')).json.token
+  const cfg = (await call('GET', '/settings', { token: admin })).json
+  await call('PUT', '/settings', { token: admin, body: { ...cfg, practiceMode: true } })
   guru = (await login('guru', 'guru123')).json.token
 })
 

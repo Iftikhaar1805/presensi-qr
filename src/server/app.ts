@@ -211,12 +211,13 @@ app.put('/settings', adminOnly, async (c) => {
       checkInTime: timeStr,
       lateTolerance: z.number().int().min(0).max(240),
       cutoffTime: timeStr,
+      practiceMode: z.boolean().default(false),
     }),
     await c.req.json(),
   )
   if (minutesOf(s.cutoffTime) <= minutesOf(s.checkInTime)) throw new ApiError('Jam batas presensi harus setelah jam masuk.')
   await saveSettings(s)
-  await audit(c.get('user'), 'Ubah pengaturan', `jam masuk ${s.checkInTime}, toleransi ${s.lateTolerance} menit, batas ${s.cutoffTime}`)
+  await audit(c.get('user'), 'Ubah pengaturan', `jam masuk ${s.checkInTime}, toleransi ${s.lateTolerance} menit, batas ${s.cutoffTime}, mode latihan ${s.practiceMode ? 'nyala' : 'mati'}`)
   return c.json({ ok: true })
 })
 

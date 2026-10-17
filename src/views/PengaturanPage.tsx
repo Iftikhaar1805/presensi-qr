@@ -137,7 +137,7 @@ export default function PengaturanPage() {
     setPreparing(true)
     try {
       const now = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-      await api.saveSettings({ ...s!, checkInTime: now, lateTolerance: 120, cutoffTime: '23:59' })
+      await api.saveSettings({ ...s!, checkInTime: now, lateTolerance: 120, cutoffTime: '23:59', practiceMode: true })
       await api.resetToday()
       toast(`Siap. Jam masuk ${now}, scan sampai 2 jam ke depan dicatat Hadir.`)
       void loaded.reload()
@@ -227,6 +227,13 @@ export default function PengaturanPage() {
                 <Input id="jam-batas" type="time" value={s.cutoffTime} onChange={(e) => setS({ ...s, cutoffTime: e.target.value })} />
               </Field>
             </div>
+            <label className="flex items-start gap-3 rounded-md bg-stabilo/40 p-4">
+              <input type="checkbox" className="mt-1 size-5 shrink-0" checked={s.practiceMode} onChange={(e) => setS({ ...s, practiceMode: e.target.checked })} />
+              <span>
+                <span className="block font-bold text-slate-900">Mode latihan</span>
+                <span className="block text-sm text-slate-700">Presensi tetap bisa dibuka hari ini walau hari Minggu atau hari libur. Nyalakan untuk mencoba atau berlatih, matikan saat dipakai sungguhan.</span>
+              </span>
+            </label>
             {/* Penjelasan dalam bahasa sehari-hari */}
             <div className="grid gap-2 rounded-md bg-slate-50 p-4 text-sm sm:grid-cols-3">
               <p>

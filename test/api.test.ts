@@ -52,6 +52,9 @@ let today = ''
 
 before(async () => {
   admin = (await login('admin', 'admin123')).json.token
+  // Mode latihan: tes tidak boleh gagal hanya karena dijalankan pada hari Minggu atau hari libur
+  const cfg = (await call('GET', '/settings', { token: admin })).json
+  await call('PUT', '/settings', { token: admin, body: { ...cfg, practiceMode: true } })
   classes = (await call('GET', '/classes', { token: admin })).json
   const subjects: Json[] = (await call('GET', '/subjects', { token: admin })).json
   demoClass = classes.find((c) => c.name === 'DEMO')
@@ -171,9 +174,13 @@ describe('mengajar dan memindai', () => {
     assert.equal((await call('POST', `/sessions/${r.json.id}/end`, { token: teacherA, body: {} })).status, 403)
     assert.equal((await call('POST', `/sessions/${r.json.id}/end`, { token: admin, body: { markAbsent: false } })).status, 200)
   })
-  it('kelas yang sedang diajar di data contoh tidak bisa direbut', async () => {
+  it('kelas kedua yang sedang diajar juga tidak bisa direbut guru lain', async () => {
+    // tidak bergantung pada data contoh hari ini (yang kosong pada hari Minggu)
+    const own = await call('POST', '/sessions/start', { token: teacherA, body: { classId: takenClass.id, subjectId: mtk.id } })
+    assert.equal(own.status, 200, JSON.stringify(own.json))
     const r = await call('POST', '/sessions/start', { token: teacherB, body: { classId: takenClass.id, subjectId: mtk.id } })
     assert.equal(r.status, 409)
+    assert.equal((await call('POST', `/sessions/${own.json.id}/end`, { token: teacherA, body: {} })).status, 200)
   })
 })
 

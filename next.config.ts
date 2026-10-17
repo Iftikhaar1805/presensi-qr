@@ -11,8 +11,6 @@ const config: NextConfig = {
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'X-Frame-Options', value: 'DENY' },
-      // Kamera hanya untuk halaman ini sendiri; mikrofon dan lokasi tidak dipakai
-      { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
     ]
     return [
       { source: '/:path*', headers: aman },

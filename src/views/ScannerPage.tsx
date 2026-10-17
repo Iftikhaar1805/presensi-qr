@@ -9,6 +9,7 @@ import LessonStatusModal from '../components/LessonStatusModal'
 import TakeClass from '../components/TakeClass'
 import { Button, Card, Input, PageHeader, Spinner } from '../components/ui'
 import { useToast } from '../context/ToastContext'
+import { cameraErrorText, startCamera } from '../lib/camera'
 import * as api from '../lib/api'
 import type { LessonRow, ScanResult, Settings, TeachingSession } from '../lib/types'
 import { useLoad } from '../lib/useLoad'
@@ -54,15 +55,6 @@ function feedback(kind: ScanResult['kind'], late: boolean, sound: boolean) {
   } catch {
     // abaikan
   }
-}
-
-function cameraErrorText(err: unknown): string {
-  const msg = String(err instanceof Error ? err.message : err)
-  if (!window.isSecureContext) return 'Kamera hanya bisa dipakai lewat alamat https://. Buka aplikasi dari alamat https, atau pakai Ketik NIS di bawah.'
-  if (/NotAllowed|Permission/i.test(msg)) return 'Izin kamera ditolak. Ketuk ikon gembok di samping alamat web, pilih Kamera lalu Izinkan, kemudian coba lagi.'
-  if (/NotFound|no camera|Requested device not found/i.test(msg)) return 'Kamera tidak ditemukan di perangkat ini. Pakai Ketik NIS di bawah.'
-  if (/NotReadable|in use/i.test(msg)) return 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi kamera atau WhatsApp, lalu coba lagi.'
-  return 'Kamera gagal dinyalakan. Coba muat ulang halaman, atau pakai Ketik NIS di bawah.'
 }
 
 function lateMinutes(time: string | null, settings: Settings | null): number {
@@ -194,19 +186,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         }
         scannerRef.current ??= new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
         if (scannerRef.current.isScanning) await scannerRef.current.stop()
-        const source = index !== null && cameras[index] ? cameras[index]!.id : { facingMode: 'environment' }
-        await scannerRef.current.start(
-          source,
-          {
-            fps: 12,
-            qrbox: (w, h) => {
-              const size = Math.floor(Math.min(w, h) * 0.7)
-              return { width: size, height: size }
-            },
-          },
-          (text) => void handleRef.current(text),
-          () => {},
-        )
+        await startCamera(scannerRef.current, (text) => void handleRef.current(text), index !== null ? cameras[index]?.id : undefined)
         setCam('running')
         if (!cameras.length) Html5Qrcode.getCameras().then(setCameras).catch(() => {})
         try {
