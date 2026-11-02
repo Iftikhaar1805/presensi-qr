@@ -58,7 +58,7 @@ before(async () => {
   classes = (await call('GET', '/classes', { token: admin })).json
   const subjects: Json[] = (await call('GET', '/subjects', { token: admin })).json
   demoClass = classes.find((c) => c.name === 'DEMO')
-  takenClass = classes.find((c) => c.name === '8B')
+  takenClass = classes.find((c) => c.name === '9B') // kelas yang tidak dipakai sesi contoh, di hari apa pun
   mtk = subjects.find((s) => s.name === 'Matematika')
   ipa = subjects.find((s) => s.name === 'IPA')
   demoStudents = (await call('GET', `/students?classId=${demoClass.id}`, { token: admin })).json

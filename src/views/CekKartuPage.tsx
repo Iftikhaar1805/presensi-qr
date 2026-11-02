@@ -7,7 +7,7 @@ import { Link } from '../lib/nav'
 import { Button, Mark } from '../components/ui'
 import { useSchool } from '../context/SchoolContext'
 import * as api from '../lib/api'
-import { cameraErrorText, startCamera } from '../lib/camera'
+import { cameraErrorText, releaseScanner, startCamera } from '../lib/camera'
 import type { CekKartuResult, Status } from '../lib/types'
 import { STATUS_META, cn, formatDateShort } from '../lib/utils'
 
@@ -30,8 +30,7 @@ export default function CekKartuPage() {
   const busyRef = useRef(false)
 
   const stop = useCallback(async () => {
-    const s = scannerRef.current
-    if (s?.isScanning) await s.stop().catch(() => {})
+    await releaseScanner(scannerRef.current)
     setCam('idle')
   }, [])
 
@@ -64,10 +63,13 @@ export default function CekKartuPage() {
     setError('')
     setCam('starting')
     try {
+      await releaseScanner(scannerRef.current)
       scannerRef.current ??= new Html5Qrcode('cek-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
       await startCamera(scannerRef.current, (text) => void lookup(text))
       setCam('running')
     } catch (e) {
+      await releaseScanner(scannerRef.current)
+      scannerRef.current = null
       setCamError(cameraErrorText(e))
       setCam('error')
     }
@@ -85,8 +87,7 @@ export default function CekKartuPage() {
 
   useEffect(
     () => () => {
-      const s = scannerRef.current
-      if (s?.isScanning) s.stop().catch(() => {})
+      void releaseScanner(scannerRef.current)
     },
     [],
   )

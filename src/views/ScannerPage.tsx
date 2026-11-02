@@ -9,7 +9,7 @@ import LessonStatusModal from '../components/LessonStatusModal'
 import TakeClass from '../components/TakeClass'
 import { Button, Card, Input, PageHeader, Spinner } from '../components/ui'
 import { useToast } from '../context/ToastContext'
-import { cameraErrorText, startCamera } from '../lib/camera'
+import { cameraErrorText, releaseScanner, startCamera } from '../lib/camera'
 import * as api from '../lib/api'
 import type { LessonRow, ScanResult, Settings, TeachingSession } from '../lib/types'
 import { useLoad } from '../lib/useLoad'
@@ -123,6 +123,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const busyRef = useRef(false)
+  const startingRef = useRef(false)
   const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 })
   const hideTimer = useRef<number | undefined>(undefined)
   const wakeLock = useRef<WakeLockSentinel | null>(null)
@@ -159,14 +160,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
   handleRef.current = handleCode
 
   const stop = useCallback(async () => {
-    const s = scannerRef.current
-    if (s?.isScanning) {
-      try {
-        await s.stop()
-      } catch {
-        // sudah berhenti
-      }
-    }
+    await releaseScanner(scannerRef.current)
     wakeLock.current?.release().catch(() => {})
     wakeLock.current = null
     setCam('idle')
@@ -174,6 +168,9 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
   const start = useCallback(
     async (index: number | null = camIndex) => {
+      // Ketukan ganda atau pindah kamera saat masih menyala tidak boleh membuka kamera dua kali
+      if (startingRef.current) return
+      startingRef.current = true
       setCamError('')
       setCam('starting')
       try {
@@ -184,8 +181,8 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         } catch {
           // abaikan
         }
+        await releaseScanner(scannerRef.current)
         scannerRef.current ??= new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
-        if (scannerRef.current.isScanning) await scannerRef.current.stop()
         await startCamera(scannerRef.current, (text) => void handleRef.current(text), index !== null ? cameras[index]?.id : undefined)
         setCam('running')
         if (!cameras.length) Html5Qrcode.getCameras().then(setCameras).catch(() => {})
@@ -195,8 +192,13 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
           // layar boleh mati sendiri
         }
       } catch (err) {
+        // Pemindai yang gagal dibuang dan dibuat baru pada percobaan berikutnya
+        await releaseScanner(scannerRef.current)
+        scannerRef.current = null
         setCamError(cameraErrorText(err))
         setCam('error')
+      } finally {
+        startingRef.current = false
       }
     },
     [camIndex, cameras],
@@ -212,8 +214,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
   useEffect(() => {
     return () => {
-      const s = scannerRef.current
-      if (s?.isScanning) s.stop().catch(() => {})
+      void releaseScanner(scannerRef.current)
       wakeLock.current?.release().catch(() => {})
       window.clearTimeout(hideTimer.current)
     }
@@ -332,7 +333,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         <div className="space-y-4">
           {/* Area kamera */}
           <div className="relative aspect-square overflow-hidden rounded-md bg-brand-900 sm:aspect-[4/3] lg:aspect-square">
-            <div id="qr-reader" className="absolute inset-0 [&_video]:h-full! [&_video]:w-full!" />
+            <div id="qr-reader" className="absolute! inset-0 overflow-hidden [&_video]:absolute [&_video]:inset-0 [&_video]:h-full! [&_video]:w-full! [&_video]:object-cover!" />
             <div id="qr-file" className="hidden" />
 
             {!result && (
