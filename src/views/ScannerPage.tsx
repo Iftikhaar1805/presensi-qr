@@ -1,7 +1,7 @@
 'use client'
 
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
-import { Camera, CameraOff, DoorOpen, ImageUp, Keyboard, RefreshCcw, SwitchCamera, Volume2, VolumeX } from 'lucide-react'
+import { Camera, CameraOff, DoorOpen, ImageUp, Keyboard, RefreshCcw, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import Cells from '../components/Cells'
 import Illustration from '../components/Illustration'
@@ -111,8 +111,6 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
   const [cam, setCam] = useState<CamState>('idle')
   const [camError, setCamError] = useState('')
-  const [cameras, setCameras] = useState<{ id: string; label: string }[]>([])
-  const [camIndex, setCamIndex] = useState<number | null>(null)
   const [result, setResult] = useState<ScanResult | null>(null)
   const [sound, setSound] = useState(true)
   const [nis, setNis] = useState('')
@@ -167,7 +165,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
   }, [])
 
   const start = useCallback(
-    async (index: number | null = camIndex) => {
+    async () => {
       // Ketukan ganda atau pindah kamera saat masih menyala tidak boleh membuka kamera dua kali
       if (startingRef.current) return
       startingRef.current = true
@@ -183,9 +181,8 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         }
         await releaseScanner(scannerRef.current)
         scannerRef.current ??= new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
-        await startCamera(scannerRef.current, (text) => void handleRef.current(text), index !== null ? cameras[index]?.id : undefined)
+        await startCamera(scannerRef.current, (text) => void handleRef.current(text))
         setCam('running')
-        if (!cameras.length) Html5Qrcode.getCameras().then(setCameras).catch(() => {})
         try {
           wakeLock.current = await navigator.wakeLock?.request('screen')
         } catch {
@@ -201,7 +198,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         startingRef.current = false
       }
     },
-    [camIndex, cameras],
+    [],
   )
 
   // Daftar "belum dipindai" ikut berubah saat guru lain memindai kelas yang sama
@@ -219,13 +216,6 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
       window.clearTimeout(hideTimer.current)
     }
   }, [])
-
-  function switchCamera() {
-    if (cameras.length < 2) return
-    const next = ((camIndex ?? 0) + 1) % cameras.length
-    setCamIndex(next)
-    void start(next)
-  }
 
   /** Hasil absen manual atau foto muncul di bawah layar, jadi tampilkan juga sebagai pesan yang terlihat */
   function announce(r: ScanResult) {
@@ -333,7 +323,7 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         <div className="space-y-4">
           {/* Area kamera */}
           <div className="relative aspect-square overflow-hidden rounded-md bg-brand-900 sm:aspect-[4/3] lg:aspect-square">
-            <div id="qr-reader" className="absolute! inset-0 overflow-hidden [&_video]:absolute [&_video]:inset-0 [&_video]:h-full! [&_video]:w-full! [&_video]:object-cover!" />
+            <div id="qr-reader" className="absolute! inset-0 overflow-hidden [&_video]:absolute! [&_video]:top-1/2 [&_video]:left-0 [&_video]:-translate-y-1/2" />
             <div id="qr-file" className="hidden" />
 
             {!result && (
@@ -382,11 +372,6 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
           {cam === 'running' && (
             <div className="flex gap-2">
-              {cameras.length > 1 && (
-                <Button variant="secondary" className="flex-1" onClick={switchCamera} icon={<SwitchCamera className="size-4" />}>
-                  Ganti kamera
-                </Button>
-              )}
               <Button variant="secondary" className="flex-1" onClick={() => void stop()} icon={<CameraOff className="size-4" />}>
                 Matikan kamera
               </Button>

@@ -3,15 +3,14 @@ import { Html5Qrcode } from 'html5-qrcode'
 /**
  * Pengaturan pemindai untuk halaman scan guru dan halaman Cek Kartu siswa.
  * - Tanpa qrbox: seluruh gambar kamera dibaca, jadi kartu tidak perlu tepat di tengah.
- * - Pembaca QR bawaan browser (BarcodeDetector) dipakai bila ada: jauh lebih cepat dan akurat di HP.
+ * - Pembaca ZXing bawaan pustaka (sudah teruji). BarcodeDetector bawaan browser sengaja tidak dipakai: perilakunya berbeda antar HP.
  */
 export const scanConfig = {
   fps: 12,
   disableFlip: true,
-  experimentalFeatures: { useBarCodeDetectorIfSupported: true },
 }
 
-type Source = string | { facingMode: 'environment' | 'user' }
+type Source = string | { facingMode: 'environment' }
 
 /** Resolusi lebih tinggi dan fokus otomatis terus-menerus, supaya QR di layar atau kartu terbaca tajam. */
 function constraintsFor(source: Source): MediaTrackConstraints {
@@ -29,6 +28,15 @@ function errText(err: unknown): string {
 
 export function isPermissionError(err: unknown): boolean {
   return /NotAllowed|Permission|denied/i.test(errName(err) + ' ' + errText(err))
+}
+
+/**
+ * Daftar kamera tanpa membuka kamera. Html5Qrcode.getCameras() sengaja tidak dipakai: ia membuka kamera sekali lagi,
+ * dan di HP aliran kamera yang sedang jalan ikut mati karena kamera hanya boleh dipakai satu aliran.
+ */
+export async function listCameras(): Promise<{ id: string; label: string }[]> {
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  return devices.filter((d) => d.kind === 'videoinput' && d.deviceId).map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}` }))
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -49,12 +57,14 @@ export async function releaseScanner(scanner: Html5Qrcode | null): Promise<void>
 }
 
 /**
- * Menyalakan kamera dengan beberapa cara berurutan, karena perangkat berbeda-beda:
- * 1. kamera yang dipilih (bila ada), 2. kamera belakang, 3. setiap kamera yang terdaftar (belakang lebih dulu), 4. kamera depan.
+ * Menyalakan kamera belakang utama. Pengguna tidak memilih kamera: kamera belakang tanpa lensa lebar (0.5x) dan tanpa kamera depan.
+ * Urutan percobaan hanya bila perangkat menolak cara pertama:
+ * 1. permintaan kamera belakang, 2. kamera terdaftar yang berlabel belakang dan bukan lensa lebar, 3. kamera pertama yang ada
+ *    (perangkat tanpa kamera belakang, misalnya laptop).
  * Bila gagal bukan karena izin (kamera masih tertahan sesi sebelumnya, dsb.), seluruh urutan diulang sekali setelah jeda singkat.
  * Izin yang ditolak langsung dilaporkan, tidak dicoba ulang.
  */
-export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string) => void, preferredId?: string): Promise<void> {
+export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string) => void): Promise<void> {
   const noop = () => {}
   let last: unknown
   const attempt = async (source: Source) => {
@@ -75,18 +85,18 @@ export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string)
   }
 
   const round = async (): Promise<boolean> => {
-    if (preferredId && (await attempt(preferredId))) return true
     if (await attempt({ facingMode: 'environment' })) return true
     try {
-      const cams = await Html5Qrcode.getCameras()
+      const cams = await listCameras()
       const back = /back|rear|belakang|environment|world/i
-      const ordered = [...cams].sort((a, b) => Number(back.test(b.label)) - Number(back.test(a.label)))
-      for (const cam of ordered) if (await attempt(cam.id)) return true
+      const wide = /ultra|wide|0\.5|lebar/i
+      const main = cams.filter((c) => back.test(c.label) && !wide.test(c.label))
+      for (const cam of [...main, ...cams.filter((c) => !main.includes(c))]) if (await attempt(cam.id)) return true
     } catch (e) {
       last = e
       if (isPermissionError(e)) throw e
     }
-    return attempt({ facingMode: 'user' })
+    return false
   }
 
   if (await round()) return

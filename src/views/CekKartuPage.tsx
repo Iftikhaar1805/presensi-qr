@@ -172,10 +172,10 @@ export default function CekKartuPage() {
           <div>
             <p className="text-lg text-slate-700">Arahkan kamera ke kartu QR milikmu untuk melihat catatan kehadiranmu. Absen tetap dilakukan guru di kelas.</p>
 
-            <div className="relative mt-5 overflow-hidden rounded-md bg-brand-900">
-              <div id="cek-reader" className={cn('w-full', cam === 'running' ? 'block' : 'hidden')} />
+            <div className="relative mt-5 aspect-square overflow-hidden rounded-md bg-brand-900">
+              <div id="cek-reader" className="absolute! inset-0 overflow-hidden [&_video]:absolute! [&_video]:top-1/2 [&_video]:left-0 [&_video]:-translate-y-1/2" />
               {cam !== 'running' && (
-                <div className="grid min-h-56 place-items-center p-6 text-center text-brand-100">
+                <div className="absolute inset-0 z-10 grid place-items-center bg-brand-900 p-6 text-center text-brand-100">
                   <div>
                     <Camera className="mx-auto size-10 text-stabilo" />
                     <p className="mt-2">{cam === 'starting' ? 'Membuka kamera...' : 'Kamera belum menyala'}</p>
