@@ -41,6 +41,23 @@ export async function listCameras(): Promise<{ id: string; label: string }[]> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** Trek video yang sedang ditampilkan di dalam kontainer pemindai (bila ada). */
+export function videoTrackOf(elementId: string): MediaStreamTrack | undefined {
+  const video = document.querySelector<HTMLVideoElement>(`#${elementId} video`)
+  return (video?.srcObject as MediaStream | null)?.getVideoTracks()[0]
+}
+
+/**
+ * Menghentikan aliran kamera yang tertinggal di kontainer. Bila pustaka gagal di tengah jalan (kamera sudah terbuka
+ * tetapi tampilan gagal dibuat), alirannya tidak ditutup dan kamera tetap tertahan: percobaan berikutnya lalu gagal.
+ */
+function stopOrphanStreams(elementId: string) {
+  document.querySelectorAll<HTMLVideoElement>(`#${elementId} video`).forEach((v) => {
+    ;(v.srcObject as MediaStream | null)?.getTracks().forEach((t) => t.stop())
+    v.srcObject = null
+  })
+}
+
 /** Menghentikan kamera dan membersihkan tampilan pemindai sampai benar-benar lepas. Aman dipanggil berulang. */
 export async function releaseScanner(scanner: Html5Qrcode | null): Promise<void> {
   if (!scanner) return
@@ -64,15 +81,16 @@ export async function releaseScanner(scanner: Html5Qrcode | null): Promise<void>
  * Bila gagal bukan karena izin (kamera masih tertahan sesi sebelumnya, dsb.), seluruh urutan diulang sekali setelah jeda singkat.
  * Izin yang ditolak langsung dilaporkan, tidak dicoba ulang.
  */
-export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string) => void): Promise<void> {
+export async function startCamera(scanner: Html5Qrcode, elementId: string, onDecode: (text: string) => void): Promise<void> {
   const noop = () => {}
-  let last: unknown
+  // Galat pertama yang dilaporkan: itu penyebab sebenarnya. Galat cadangan sesudahnya sering menyesatkan (mis. OverconstrainedError).
+  let first: unknown
   const attempt = async (source: Source) => {
     try {
       await scanner.start(source, { ...scanConfig, videoConstraints: constraintsFor(source) }, onDecode, noop)
       return true
     } catch (e) {
-      last = e
+      first ??= e
       if (isPermissionError(e)) throw e
       // setelah gagal, pastikan tidak ada sisa aliran yang menahan kamera
       try {
@@ -80,6 +98,7 @@ export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string)
       } catch {
         // abaikan
       }
+      stopOrphanStreams(elementId)
       return false
     }
   }
@@ -93,7 +112,7 @@ export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string)
       const main = cams.filter((c) => back.test(c.label) && !wide.test(c.label))
       for (const cam of [...main, ...cams.filter((c) => !main.includes(c))]) if (await attempt(cam.id)) return true
     } catch (e) {
-      last = e
+      first ??= e
       if (isPermissionError(e)) throw e
     }
     return false
@@ -102,7 +121,7 @@ export async function startCamera(scanner: Html5Qrcode, onDecode: (text: string)
   if (await round()) return
   await sleep(700)
   if (await round()) return
-  throw last ?? new Error('Kamera tidak bisa dinyalakan')
+  throw first ?? new Error('Kamera tidak bisa dinyalakan')
 }
 
 /** Pesan untuk pengguna dalam bahasa sehari-hari, ditambah detail teknis supaya penyebab pasti bisa dicari. */

@@ -9,7 +9,7 @@ import LessonStatusModal from '../components/LessonStatusModal'
 import TakeClass from '../components/TakeClass'
 import { Button, Card, Input, PageHeader, Spinner } from '../components/ui'
 import { useToast } from '../context/ToastContext'
-import { cameraErrorText, releaseScanner, startCamera } from '../lib/camera'
+import { cameraErrorText, releaseScanner, startCamera, videoTrackOf } from '../lib/camera'
 import * as api from '../lib/api'
 import type { LessonRow, ScanResult, Settings, TeachingSession } from '../lib/types'
 import { useLoad } from '../lib/useLoad'
@@ -122,6 +122,13 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const busyRef = useRef(false)
   const startingRef = useRef(false)
+  // Penanda generasi: tiap start/stop/unmount menaikkan angka ini. Start yang selesai setelah dibatalkan langsung melepas kamera.
+  const genRef = useRef(0)
+  const aliveRef = useRef(true)
+  const queuedRef = useRef(false)
+  const resumeRef = useRef(false)
+  const lostRef = useRef<number[]>([])
+  const camRef = useRef<CamState>('idle')
   const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 })
   const hideTimer = useRef<number | undefined>(undefined)
   const wakeLock = useRef<WakeLockSentinel | null>(null)
@@ -145,9 +152,11 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         if (r.kind === 'ok') void reloadBoard(true)
         return r
       } catch (e) {
-        // Sesi sudah diakhiri (misal oleh admin): kembali ke daftar kelas
         toast(e instanceof Error ? e.message : 'Gagal memindai', 'error')
-        onEnded()
+        // Kembali ke daftar kelas HANYA bila sesi memang sudah berakhir (409, misal diakhiri admin).
+        // Gangguan jaringan atau server: tetap di layar scan dan kartu yang sama boleh langsung dicoba lagi.
+        if (e instanceof api.ApiError && e.status === 409) onEnded()
+        else lastRef.current = { code: '', at: 0 }
         return undefined
       } finally {
         busyRef.current = false
@@ -157,7 +166,10 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
   )
   handleRef.current = handleCode
 
+  camRef.current = cam
+
   const stop = useCallback(async () => {
+    genRef.current++
     await releaseScanner(scannerRef.current)
     wakeLock.current?.release().catch(() => {})
     wakeLock.current = null
@@ -166,9 +178,13 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
 
   const start = useCallback(
     async () => {
-      // Ketukan ganda atau pindah kamera saat masih menyala tidak boleh membuka kamera dua kali
-      if (startingRef.current) return
+      // Ketukan ganda tidak boleh membuka kamera dua kali; permintaan saat masih memulai diantrekan sekali
+      if (startingRef.current) {
+        queuedRef.current = true
+        return
+      }
       startingRef.current = true
+      const gen = ++genRef.current
       setCamError('')
       setCam('starting')
       try {
@@ -181,8 +197,25 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         }
         await releaseScanner(scannerRef.current)
         scannerRef.current ??= new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
-        await startCamera(scannerRef.current, (text) => void handleRef.current(text))
+        await startCamera(scannerRef.current, 'qr-reader', (text) => void handleRef.current(text))
+        // Dibatalkan selagi memulai (halaman ditutup, aplikasi diminimalkan, atau tombol Matikan): lepas kamera sekarang
+        if (!aliveRef.current || gen !== genRef.current) {
+          await releaseScanner(scannerRef.current)
+          return
+        }
         setCam('running')
+        // Kamera direbut aplikasi lain (telepon masuk, aplikasi kamera) atau sistem: nyalakan ulang, paling banyak 2 kali per 15 detik
+        videoTrackOf('qr-reader')?.addEventListener('ended', () => {
+          if (!aliveRef.current || gen !== genRef.current || document.visibilityState === 'hidden') return
+          const now = Date.now()
+          lostRef.current = lostRef.current.filter((t) => now - t < 15_000).concat(now)
+          if (lostRef.current.length <= 2) void startRef.current()
+          else {
+            void releaseScanner(scannerRef.current)
+            setCamError('Kamera terputus berkali-kali. Tutup aplikasi lain yang memakai kamera, lalu ketuk Coba lagi.')
+            setCam('error')
+          }
+        })
         try {
           wakeLock.current = await navigator.wakeLock?.request('screen')
         } catch {
@@ -192,14 +225,38 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
         // Pemindai yang gagal dibuang dan dibuat baru pada percobaan berikutnya
         await releaseScanner(scannerRef.current)
         scannerRef.current = null
+        if (!aliveRef.current || gen !== genRef.current) return
         setCamError(cameraErrorText(err))
         setCam('error')
       } finally {
         startingRef.current = false
+        if (queuedRef.current && aliveRef.current) {
+          queuedRef.current = false
+          void startRef.current()
+        }
       }
     },
     [],
   )
+  const startRef = useRef(start)
+  startRef.current = start
+
+  // HP dikunci atau pindah aplikasi: browser mematikan kamera. Lepas kamera saat tersembunyi, nyalakan lagi saat kembali.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (camRef.current === 'running' || camRef.current === 'starting') {
+          resumeRef.current = true
+          void stop()
+        }
+      } else if (resumeRef.current) {
+        resumeRef.current = false
+        void startRef.current()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [stop])
 
   // Daftar "belum dipindai" ikut berubah saat guru lain memindai kelas yang sama
   useEffect(() => {
@@ -210,7 +267,10 @@ function ScanView({ session, onEnded }: { session: TeachingSession; onEnded: () 
   }, [reloadBoard])
 
   useEffect(() => {
+    aliveRef.current = true
     return () => {
+      aliveRef.current = false
+      genRef.current++
       void releaseScanner(scannerRef.current)
       wakeLock.current?.release().catch(() => {})
       window.clearTimeout(hideTimer.current)

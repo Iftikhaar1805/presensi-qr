@@ -28,15 +28,23 @@ export default function CekKartuPage() {
   const [error, setError] = useState('')
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const busyRef = useRef(false)
+  const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 })
+  const genRef = useRef(0)
+  const aliveRef = useRef(true)
 
   const stop = useCallback(async () => {
+    genRef.current++
     await releaseScanner(scannerRef.current)
     setCam('idle')
   }, [])
 
   const lookup = useCallback(
     async (code: string) => {
-      if (busyRef.current) return
+      // Kamera membaca kartu yang sama belasan kali per detik. Tanpa jeda ini, kartu yang tidak dikenali
+      // dikirim berulang-ulang dan pembatas server menahan perangkat ini setelah 30 percobaan.
+      const now = Date.now()
+      if (busyRef.current || (code === lastRef.current.code && now - lastRef.current.at < 4000)) return
+      lastRef.current = { code, at: now }
       busyRef.current = true
       setBusy(true)
       setError('')
@@ -59,17 +67,24 @@ export default function CekKartuPage() {
   )
 
   async function start() {
+    if (cam === 'starting') return
+    const gen = ++genRef.current
     setCamError('')
     setError('')
     setCam('starting')
     try {
       await releaseScanner(scannerRef.current)
       scannerRef.current ??= new Html5Qrcode('cek-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false })
-      await startCamera(scannerRef.current, (text) => void lookup(text))
+      await startCamera(scannerRef.current, 'cek-reader', (text) => void lookup(text))
+      if (!aliveRef.current || gen !== genRef.current) {
+        await releaseScanner(scannerRef.current)
+        return
+      }
       setCam('running')
     } catch (e) {
       await releaseScanner(scannerRef.current)
       scannerRef.current = null
+      if (!aliveRef.current || gen !== genRef.current) return
       setCamError(cameraErrorText(e))
       setCam('error')
     }
@@ -85,12 +100,20 @@ export default function CekKartuPage() {
     }
   }
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    aliveRef.current = true
+    // HP dikunci atau pindah aplikasi: lepas kamera; siswa cukup mengetuk Nyalakan kamera lagi
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') void stop()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      aliveRef.current = false
+      genRef.current++
+      document.removeEventListener('visibilitychange', onVisibility)
       void releaseScanner(scannerRef.current)
-    },
-    [],
-  )
+    }
+  }, [stop])
 
   return (
     <div className="min-h-full bg-slate-50 px-4 py-6 sm:py-10">

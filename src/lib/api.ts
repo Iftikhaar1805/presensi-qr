@@ -28,7 +28,14 @@ import type {
 export const SESSION_KEY = 'presensi-qr-session'
 export const SESSION_EXPIRED_EVENT = 'presensi-session-expired'
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** Kode HTTP dari server; 0 bila server tidak terjangkau atau terlalu lama menjawab */
+  status: number
+  constructor(message: string, status = 0) {
+    super(message)
+    this.status = status
+  }
+}
 
 interface Session {
   token: string
@@ -81,7 +88,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     if (res.status === 401 && token) window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
-    throw new ApiError(data?.error ?? 'Terjadi kesalahan. Coba lagi.')
+    throw new ApiError(data?.error ?? 'Terjadi kesalahan. Coba lagi.', res.status)
   }
   return data as T
 }
