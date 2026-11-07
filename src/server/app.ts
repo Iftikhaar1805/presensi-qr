@@ -431,16 +431,28 @@ app.post('/students/import', adminOnly, async (c) => {
 /** Membuat atau memperbarui kehadiran harian saat siswa pertama kali dipindai hari ini. */
 async function ensureDaily(studentId: number, now: { date: string; time: string }, user: AuthUser) {
   const stamp = `${now.date} ${now.time}`
-  const existing = await attendanceOf(studentId, now.date)
+  let existing = await attendanceOf(studentId, now.date)
   if (!existing) {
-    const created = await db.insert(schema.attendances).values({ studentId, date: now.date, checkInTime: now.time, status: await statusFor(now.time), note: '', recordedBy: user.id, updatedAt: stamp }).returning().get()
-    return { daily: created, fresh: true }
+    // Atomik: bila permintaan lain (pindaian ganda, atau guru lain di kelas lain) membuat baris yang sama di saat bersamaan,
+    // sisipan ini diabaikan dan baris yang sudah ada dipakai, bukan galat UNIQUE.
+    const created = await db.insert(schema.attendances).values({ studentId, date: now.date, checkInTime: now.time, status: await statusFor(now.time), note: '', recordedBy: user.id, updatedAt: stamp }).onConflictDoNothing().returning().get()
+    if (created) return { daily: created, fresh: true }
+    existing = await attendanceOf(studentId, now.date)
+    if (!existing) throw new ApiError('Kehadiran harian gagal disimpan. Coba pindai lagi.', 409)
   }
-  // Alpa otomatis, lalu siswa datang setelah jam batas: dicatat Terlambat
+  // Alpa otomatis, lalu siswa datang setelah jam batas: dicatat Terlambat (hanya sekali walau dipindai serentak)
   if (existing.status === 'alpa' && existing.recordedBy === null) {
-    await logChange(existing, 'terlambat', 'Scan setelah jam batas', user)
-    const updated = await db.update(schema.attendances).set({ status: 'terlambat', checkInTime: now.time, note: 'Scan setelah jam batas', recordedBy: user.id, updatedAt: stamp }).where(eq(schema.attendances.id, existing.id)).returning().get()
-    return { daily: updated, fresh: true }
+    const updated = await db
+      .update(schema.attendances)
+      .set({ status: 'terlambat', checkInTime: now.time, note: 'Scan setelah jam batas', recordedBy: user.id, updatedAt: stamp })
+      .where(and(eq(schema.attendances.id, existing.id), eq(schema.attendances.status, 'alpa'), isNull(schema.attendances.recordedBy)))
+      .returning()
+      .get()
+    if (updated) {
+      await logChange(existing, 'terlambat', 'Scan setelah jam batas', user)
+      return { daily: updated, fresh: true }
+    }
+    return { daily: (await attendanceOf(studentId, now.date)) ?? existing, fresh: false }
   }
   return { daily: existing, fresh: false }
 }
@@ -473,9 +485,19 @@ app.post('/scan', staff, async (c) => {
   // Sudah tercatat hadir, izin, atau sakit di pelajaran ini. Yang berstatus Alpa boleh dipindai ulang (datang terlambat ke kelas).
   if (lesson && lesson.status !== 'alpa') return c.json({ kind: 'duplicate', student: toStudent(student, cm), attendance: lesson, className, subjectName: subject.name })
   const { daily, fresh } = await ensureDaily(student.id, now, user)
+  // Atomik juga di sini: hanya satu dari beberapa pindaian serentak yang mencatat; sisanya dijawab "sudah absen".
   const record = lesson
-    ? await db.update(schema.lessonAttendances).set({ status: 'hadir', checkInTime: now.time, note: '', recordedBy: user.id, updatedAt: stamp }).where(eq(schema.lessonAttendances.id, lesson.id)).returning().get()
-    : await db.insert(schema.lessonAttendances).values({ studentId: student.id, date: now.date, subjectId, status: 'hadir', checkInTime: now.time, note: '', recordedBy: user.id, updatedAt: stamp }).returning().get()
+    ? await db
+        .update(schema.lessonAttendances)
+        .set({ status: 'hadir', checkInTime: now.time, note: '', recordedBy: user.id, updatedAt: stamp })
+        .where(and(eq(schema.lessonAttendances.id, lesson.id), eq(schema.lessonAttendances.status, 'alpa')))
+        .returning()
+        .get()
+    : await db.insert(schema.lessonAttendances).values({ studentId: student.id, date: now.date, subjectId, status: 'hadir', checkInTime: now.time, note: '', recordedBy: user.id, updatedAt: stamp }).onConflictDoNothing().returning().get()
+  if (!record) {
+    const winner = await db.select().from(schema.lessonAttendances).where(and(eq(schema.lessonAttendances.studentId, student.id), eq(schema.lessonAttendances.date, now.date), eq(schema.lessonAttendances.subjectId, subjectId))).get()
+    return c.json({ kind: 'duplicate', student: toStudent(student, cm), attendance: winner ?? lesson, className, subjectName: subject.name })
+  }
   // Stempel memakai status harian jika scan ini yang pertama hari ini (bisa Terlambat); selain itu Hadir
   return c.json({ kind: 'ok', student: toStudent(student, cm), attendance: { ...record, status: fresh ? daily.status : 'hadir' }, className, subjectName: subject.name })
 })
